@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="theme-color" content="#0a0a0a">
+    <link rel="manifest" href="/static/manifest.json">
+    <link rel="stylesheet" href="/static/style.css">
+    <title>Claude Gateway</title>
+</head>
+<body>
+    <div id="settings-screen" class="screen active">
+        <div class="settings-card">
+            <h1>Claude Gateway</h1>
+            <p class="subtitle">输入密钥以连接</p>
+            <div class="form-group"><input type="password" id="auth-secret" placeholder="密钥" autocomplete="off" autofocus></div>
+            <button id="connect-btn" class="btn-primary" onclick="window._gwConnect&&_gwConnect()">连接</button>
+            <p id="connect-status" class="status-text"></p>
+        </div>
+    </div>
+
+    <div id="chat-screen" class="screen">
+        <header class="chat-header">
+            <button id="menu-btn" class="icon-btn">☰</button>
+            <span id="current-title" class="chat-title">Claude Gateway</span>
+            <button id="settings-btn" class="icon-btn">⚙</button>
+        </header>
+        <div id="messages-container" class="messages"></div>
+        <div id="welcome-screen" class="welcome">
+            <div class="welcome-content">
+                <p class="welcome-greeting">欢迎回来</p>
+                <h1 class="welcome-title">Claude Gateway</h1>
+                <p class="welcome-sub">远程 Claude Code 终端</p>
+                <div class="welcome-input-wrap">
+                    <button id="welcome-plus-btn" class="welcome-plus-btn">+</button>
+                    <textarea id="welcome-input" class="welcome-input" rows="1" placeholder="发消息..."></textarea>
+                    <button id="welcome-send-btn" class="welcome-send-btn">➤</button>
+                </div>
+                <p class="welcome-hint">支持文件上传、代码编写、命令执行</p>
+            </div>
+        </div>
+        <div class="compose-bar" id="compose-bar">
+            <textarea id="msg-input" rows="1" placeholder="发消息..." autofocus></textarea>
+            <button id="plus-btn" class="plus-btn">+</button>
+            <button id="send-btn" class="send-btn hidden">➤</button>
+        </div>
+        <div id="action-sheet-overlay" class="action-overlay hidden"></div>
+        <div id="action-sheet" class="action-sheet hidden">
+            <div class="action-row">
+                <button class="action-item" id="action-camera"><span class="action-icon">📷</span><span>拍照</span></button>
+                <button class="action-item" id="action-album"><span class="action-icon">🖼️</span><span>相册</span></button>
+                <button class="action-item" id="action-file"><span class="action-icon">📁</span><span>文件</span></button>
+                <button class="action-item" id="action-status"><span class="action-icon">📊</span><span>状态</span></button>
+            </div>
+            <button id="action-cancel" class="action-cancel">取消</button>
+        </div>
+        <input type="file" id="camera-input" hidden accept="image/*" capture="environment">
+        <input type="file" id="album-input" hidden accept="image/*,.pdf,.docx,.txt,.md,.py,.c,.cpp,.h,.js,.ts,.html,.css,.json,.xml,.yaml,.yml,.csv,.log">
+        <input type="file" id="file-input" multiple hidden accept=".pdf,.docx,.txt,.md,.py,.c,.cpp,.h,.js,.ts,.html,.css,.json,.xml,.yaml,.yml,.csv,.log,.png,.jpg,.jpeg,.gif,.bmp,.webp">
+        <div id="file-preview-bar" class="file-preview hidden"></div>
+    </div>
+
+    <div id="sidebar-overlay" class="sidebar-overlay hidden"></div>
+    <div id="sidebar" class="sidebar hidden">
+        <div class="sidebar-header">
+            <h2>对话</h2>
+            <div class="sidebar-actions">
+                <button id="batch-btn" class="btn-small">批量</button>
+                <button id="new-chat-btn" class="btn-small primary">+ 新建</button>
+            </div>
+        </div>
+        <div class="sidebar-search">
+            <input type="text" id="conv-search" placeholder="搜索对话...">
+        </div>
+        <div id="conversation-list" class="conv-list"></div>
+        <div id="batch-bar" class="batch-bar hidden">
+            <span id="batch-count">已选 0 项</span>
+            <button id="batch-delete-btn" class="btn-small danger">删除选中</button>
+            <button id="batch-cancel-btn" class="btn-small">取消</button>
+        </div>
+    </div>
+
+    <div id="settings-overlay" class="settings-overlay hidden"></div>
+    <div id="settings-panel" class="settings-panel hidden">
+        <div class="settings-header"><h2>设置</h2><button id="settings-close-btn" class="icon-btn">✕</button></div>
+        <div class="settings-body">
+            <div class="settings-section">
+                <h3>连接 ▾</h3>
+                <div class="section-body"><div class="form-row"><label>服务器地址</label><input type="text" id="set-server-url"></div>
+                <div class="form-row"><label>密钥</label><input type="password" id="set-secret"></div>
+                <button id="save-conn-btn" class="btn-primary small">保存并重连</button></div>
+            </div>
+            <div class="settings-section">
+                <h3>主题 ▾</h3>
+                <div class="section-body"><div class="preset-row"><button class="preset-btn active" data-theme="black">黑</button><button class="preset-btn" data-theme="dark">暗</button><button class="preset-btn" data-theme="gray">灰</button><button class="preset-btn" data-theme="blue">蓝</button></div>
+                <div class="form-row"><label>强调色</label><input type="color" id="set-accent" value="#4a9eff"></div>
+                <div class="form-row"><label>字体 <span id="font-label">大 (17px)</span></label><input type="range" id="set-font-size" min="15" max="22" value="17" step="1"></div></div>
+            </div>
+            <div class="settings-section">
+                <h3>文件 ▾</h3>
+                <div class="section-body"><div id="file-info" class="sys-info"></div>
+                <div class="form-row"><label>存储路径</label><input type="text" id="set-file-dir"></div>
+                <div class="form-row"><label>上传大小上限 (1-500 MB)</label><input type="number" id="set-max-fsize" min="1" max="500"></div></div>
+            </div>
+            <div class="settings-section">
+                <h3>系统 ▾</h3>
+                <div class="section-body">
+                <div id="sys-info-line"><span>端口</span> <span id="sys-port">-</span></div>
+                <div id="sys-info" class="sys-info"><span class="sys-loading">加载中...</span></div>
+                <div class="form-row"><label>会话超时</label><select id="set-timeout"><option value="0">永不</option><option value="30" selected>30 分钟</option><option value="60">1 小时</option></select></div>
+                <div class="form-row"><label>终端镜像</label><select id="set-mirror"><option value="1">开</option><option value="0">关</option></select></div>
+                <div class="form-row"><label>进程闲置回收</label><select id="set-idle-timeout"><option value="5">5 分钟</option><option value="10">10 分钟</option><option value="30">30 分钟</option><option value="0">永不</option></select></div>
+                <div class="sys-actions">
+                    <button id="sys-clear-logs" class="btn-small">清除日志</button>
+                    <button id="sys-clean-cache" class="btn-small">清理缓存</button>
+                    <button id="sys-view-logs" class="btn-small">查看日志</button>
+                    <button id="sys-soft-restart" class="btn-small">软重启</button>
+                </div>
+                <div class="sys-actions sys-actions-danger">
+                    <button id="sys-clear-convs" class="btn-small danger">清空对话</button>
+                    <button id="sys-restart" class="btn-small danger">重启</button>
+                </div>
+                <div id="sys-log-viewer" class="log-viewer hidden"></div></div>
+            </div>
+            <div class="settings-section">
+                <h3>PWA</h3>
+                <div class="section-body">
+                <p id="sw-status" class="settings-info">-</p>
+                <button id="sw-update-btn" class="btn-small hidden">更新 PWA</button>
+                <button id="sw-unreg-btn" class="btn-small">注销 SW 并刷新</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="confirm-overlay" class="confirm-overlay hidden">
+        <div class="confirm-dialog">
+            <p id="confirm-msg"></p>
+            <div class="confirm-buttons">
+                <button id="confirm-cancel">取消</button>
+                <span class="confirm-divider"></span>
+                <button id="confirm-ok" class="danger">确定</button>
+            </div>
+        </div>
+    </div>
+    <div id="toast" class="toast hidden"></div>
+
+    <!-- Context menu — floating popover on long press -->
+    <div id="ctx-overlay" class="ctx-overlay hidden"></div>
+    <div id="ctx-menu" class="ctx-menu hidden">
+        <button id="ctx-pin" class="ctx-menu-btn">置顶</button>
+        <button id="ctx-rename" class="ctx-menu-btn">重命名</button>
+        <button id="ctx-delete" class="ctx-menu-btn danger">删除</button>
+    </div>
+
+    <script src="/static/app.js?v=2"></script>
+</body>
+</html>

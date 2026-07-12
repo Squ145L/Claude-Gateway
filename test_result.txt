@@ -1,0 +1,17 @@
+Testing DeepSeek API endpoints...
+
+[OK] OpenAI /v1/chat/completions: HTTP 200
+     Response: {"id":"7fe262f2-c106-441f-b2f7-d266a1cec81b","object":"chat.completion","created":1783602014,"model":"deepseek-v4-flash","choices":[{"index":0,"message":{"role":"assistant","content":"Hi"},"logprobs":
+
+[OK] OpenAI /chat/completions (no v1): HTTP 200
+     Response: {"id":"4b5549be-12f7-4e37-9cc2-2a2c674a6a18","object":"chat.completion","created":1783602015,"model":"deepseek-v4-flash","choices":[{"index":0,"message":{"role":"assistant","content":"Hi."},"logprobs"
+
+[OK] Anthropic /anthropic/v1/messages: HTTP 200
+     Response: {"id":"5de769d0-0fdc-49da-b984-ccde7fcf9603","type":"message","role":"assistant","model":"deepseek-v4-flash","content":[{"type":"text","text":"Hi"}],"stop_reason":"end_turn","stop_sequence":null,"usag
+
+[OK] OpenAI /v1/chat/completions (model: deepseek-v4-pro): HTTP 200
+     Response: {"id":"3a7c11a0-7379-4c25-b0f6-e127832972fc","object":"chat.completion","created":1783602017,"model":"deepseek-v4-pro","choices":[{"index":0,"message":{"role":"assistant","content":"","reasoning_conte
+
+[OK] Anthropic /anthropic/v1/messages (model: deepseek-v4-pro): HTTP 200
+     Response: {"id":"3d6c356d-16aa-46be-bb38-43b85330646e","type":"message","role":"assistant","model":"deepseek-v4-pro","content":[{"type":"thinking","thinking":"We are asked: \"say hi in one word","signature":"3d
+

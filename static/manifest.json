@@ -1,0 +1,16 @@
+{
+  "name": "Claude Gateway",
+  "short_name": "CGateway",
+  "description": "Chat with Claude from anywhere",
+  "start_url": "/static/index.html",
+  "display": "standalone",
+  "background_color": "#0f0f1a",
+  "theme_color": "#1a1a2e",
+  "icons": [
+    {
+      "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%237c5cfc'/><text x='50' y='68' font-size='55' text-anchor='middle' fill='white'>C</text></svg>",
+      "sizes": "100x100",
+      "type": "image/svg+xml"
+    }
+  ]
+}
