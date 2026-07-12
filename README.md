@@ -2,7 +2,7 @@
 
 通过 frp 隧道远程操控 Claude Code，支持 DeepSeek。
 
-浏览器访问 → frp 隧道 → 家里 Windows 电脑 → Claude Code 常驻进程池 → 秒回。
+手机浏览器 → frp 隧道 → 家里 Windows 电脑 → Claude Code 常驻进程池 → 秒回。
 
 ## 功能
 
@@ -11,102 +11,114 @@
 - **常驻进程池** — 每对话一个长活 Claude 进程，上下文在内存不重载
 - **侧边栏管理** — 新建/切换/置顶/重命名/批量删除对话
 - **文件上传下载** — 图片/PDF/Word/代码，Claude 自动感知
-- **PWA 可安装** — 添加到手机桌面，像原生 App
+- **网页可安装**（开发中）— 添加到手机桌面，像原生 App
 - **DeepSeek 余额显示** — 设置页实时查看
 - **密钥认证** — 单密钥，无需用户系统
 
-## 给 Agent 看：如何部署
+---
 
-> 以下步骤一个 AI Agent 可以直接执行。每一步都能验证结果。
+## 给 AI Agent：部署指南
 
-### 1. 环境检查
+> 以下步骤可被 AI Agent 直接执行，每步带验证命令。
+
+### 1. 检查环境并安装依赖
 
 ```bash
-python --version         # 需要 3.9+
-node --version           # 需要 Node.js
-claude --version         # Claude Code CLI 必须已安装
+# 检查 Python
+python --version          # 需要 3.9+，否则指引用户安装 python.org
+
+# 检查 Node.js（Claude Code 需要）
+node --version
+
+# 安装 Python 依赖
+pip install fastapi uvicorn aiosqlite python-dotenv aiohttp
 ```
 
-### 2. 克隆并安装
+验证：`python -c "import fastapi, uvicorn, aiosqlite, aiohttp; print('ok')"`
+
+### 2. 下载并配置
 
 ```bash
-git clone https://github.com/<user>/claude-gateway.git
+git clone https://github.com/<用户名>/claude-gateway.git
 cd claude-gateway
-pip install -r requirements.txt
+copy .env.example .env      # Windows
+# cp .env.example .env      # Linux/Mac
 ```
 
-验证：`python -c "import fastapi, uvicorn, aiosqlite, aiohttp"` 无报错。
+编辑 `.env`，必改：
+- `AUTH_SECRET` — 随机字符串，手机端登录密钥
+- `CLAUDE_CWD` — Claude 的工作目录（项目路径）
 
-### 3. 配置
+验证：`python -c "from config import *; print(PORT, len(AUTH_SECRET)>5)"` → 应输出 `8080 True`
 
-```bash
-copy .env.example .env     # Windows
-# cp .env.example .env     # Linux/Mac
-```
-
-编辑 `.env`，必改两项：
-- `AUTH_SECRET=你的随机密钥`（手机端登录用）
-- `CLAUDE_CWD=你的项目路径`（Claude 工作目录）
-
-验证：`python -c "from config import *; print(PORT, AUTH_SECRET[:4])"` 输出端口和密钥前 4 位。
-
-### 4. 启动
+### 3. 启动服务
 
 ```bash
 python -m uvicorn main:app --host 0.0.0.0 --port 8080
 ```
 
-验证：`curl http://localhost:8080/api/health` 返回 `{"status":"ok",...}`。
+验证：`curl http://localhost:8080/api/health` → `{"status":"ok",...}`
 
-### 5. 内网穿透
+### 4. 配置内网穿透（frp）
 
-用 Sakurafrp 或其他 frp 服务创建 **TCP 隧道**，指向 `127.0.0.1:8080`。
+以 Sakurafrp 为例，创建 TCP 隧道：
 
-验证：浏览器打开隧道地址，看到 Claude Gateway 登录页。
+| 配置项 | 值 |
+|--------|-----|
+| 本地 IP | `127.0.0.1` |
+| 本地端口 | `8080` |
+| 自动 HTTPS | 自动 |
+| 访问密码 | （留空） |
 
-### 6. 验证完整链路
+验证：浏览器打开隧道地址，看到登录页。
 
-1. 浏览器打开隧道地址
-2. 输入 `.env` 中设置的密钥
-3. 发一条 `say hi in one word` → 应收到流式回复
-4. 发 `/status` → 应返回服务器状态
+### 5. 端到端验证
 
-## 用户部署步骤
+1. 浏览器打开隧道地址 → 输入密钥 → 进入对话
+2. 发 `say hi` → 应收到流式回复
+3. 发 `/status` → 返回服务器状态
 
-1. **装 Python 3.9+ 和 Node.js**（Claude Code 需要）
-2. **装 Claude Code CLI**：`npm install -g @anthropic-ai/claude-code`
-3. **下载本项目**，解压到 Windows 电脑
-4. **双击** `run.bat` 启动服务器
-5. **配置 frp 隧道**，指向本机 `127.0.0.1:8080`
-6. **手机浏览器**打开隧道地址，输入密钥，开始用
+---
 
-> `run.bat` 自带进程守护——崩溃后 2 秒自动重启。
+## 给用户：部署步骤（Sakurafrp为例）
+1. - 注册 Sakurafrp，下载sakurafrp启动器，创建 TCP 隧道：
+   - 本地 IP：`127.0.0.1`
+   - 本地端口：`8080`
+   - 自动HTTPS：`自动`
+   - 其他默认即可
+6. **双击 `run.bat`** 启动（自带崩溃重启守护）
+
+8. **手机浏览器**打开隧道地址，输入密钥，开始用
+
+---
 
 ## 架构
 
 ```
 手机浏览器
-  ↕ HTTPS (frp 隧道)
+  ↕ HTTPS（frp 隧道）
 FastAPI :8080
-  ├── SSE /api/chat          → Claude 进程池（stdin/stdout NDJSON）
-  ├── REST /api/conversations → SQLite（对话/消息存储）
-  ├── REST /api/files        → 文件上传下载
-  ├── REST /api/system       → 系统管理/重启/配置
-  └── /static/               → PWA 前端（vanilla JS，零框架）
+  ├── SSE /api/chat           → Claude 进程池（stdin/stdout NDJSON）
+  ├── REST /api/conversations → SQLite
+  ├── REST /api/files         → 文件上传/下载
+  ├── REST /api/system        → 系统管理/重启/配置
+  └── /static/                → 前端（vanilla JS，零框架）
 ```
 
-每个对话一个常驻 `claude` 进程，上下文在内存不重载。闲置超时可配置。
+每个对话一个常驻 `claude` 进程，上下文在内存不重载。
 
-## 命令
+---
+
+## 命令(开发中 部分不可用)
 
 消息以 `/` 开头拦截为命令：
 
 | 命令 | 说明 |
 |------|------|
-| `/help` | 显示可用命令 |
+| `/help` | 可用命令列表 |
 | `/status` | 服务器状态、进程池 |
 | `/model` | 查看当前模型 |
 | `/effort [等级]` | 查看/设置推理深度 |
-| `/compact` | 回收进程，下次自动 resume |
+| `/compact` | 回收进程，下次自动恢复 |
 | `/clear` | 清屏 |
 | `/stop` | 停止生成 |
