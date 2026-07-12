@@ -27,9 +27,6 @@
 # 检查 Python
 python --version          # 需要 3.9+，否则指引用户安装 python.org
 
-# 检查 Node.js（Claude Code 需要）
-node --version
-
 # 安装 Python 依赖
 pip install fastapi uvicorn aiosqlite python-dotenv aiohttp
 ```
@@ -61,7 +58,10 @@ python -m uvicorn main:app --host 0.0.0.0 --port 8080
 
 ### 4. 配置内网穿透（frp）
 
-以 Sakurafrp 为例，创建 TCP 隧道：
+内网穿透需要用户在 frp 服务商网页操作，Agent 无法直接完成。引导用户按以下步骤操作：
+
+1. 让用户去 **Sakurafrp**（或其他 frp 服务）注册账号，下载启动器
+2. 引导用户创建 **TCP 隧道**，填写以下参数：
 
 | 配置项 | 值 |
 |--------|-----|
@@ -70,7 +70,10 @@ python -m uvicorn main:app --host 0.0.0.0 --port 8080
 | 自动 HTTPS | 自动 |
 | 访问密码 | （留空） |
 
-验证：浏览器打开隧道地址，看到登录页。
+3. 开启隧道后，日志会显示：`TCP 隧道启动成功 使用 >> example.com:xxx 连接你的隧道`
+4. 让用户把隧道地址发给你
+
+验证：浏览器打开隧道地址，看到登录页即成功
 
 ### 5. 端到端验证
 
@@ -80,15 +83,18 @@ python -m uvicorn main:app --host 0.0.0.0 --port 8080
 
 ---
 
-## 给用户：部署步骤（Sakurafrp为例）
-1. - 注册 Sakurafrp，下载sakurafrp启动器，创建 TCP 隧道：
+## 给用户：部署步骤
+
+> 前提：Agent 已帮你装好 Python、Node.js 和 Claude Code CLI。
+
+1. **下载本项目**，解压到电脑任意目录
+2. **配置 `.env`** — 复制 `.env.example` 为 `.env`，修改密钥和工作目录
+3. **注册 frp 服务**（以 Sakurafrp 为例），下载启动器，创建 TCP 隧道：
    - 本地 IP：`127.0.0.1`
    - 本地端口：`8080`
-   - 自动HTTPS：`自动`
-   - 其他默认即可
-6. **双击 `run.bat`** 启动（自带崩溃重启守护）
-
-8. **手机浏览器**打开隧道地址，输入密钥，开始用
+   - 自动 HTTPS：自动
+4. **双击 `run.bat`** 启动服务（自带崩溃重启守护）
+5. **手机浏览器**打开隧道地址，输入密钥，开始使用
 
 ---
 
@@ -109,7 +115,7 @@ FastAPI :8080
 
 ---
 
-## 命令(开发中 部分不可用)
+## 命令（部分开发中）
 
 消息以 `/` 开头拦截为命令：
 
