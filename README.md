@@ -28,7 +28,7 @@ pip install fastapi uvicorn aiosqlite python-dotenv aiohttp
 ### 2. 配置
 
 ```bash
-copy .env.example .env      # Windows
+copy env.example .env      # Windows
 
 询问用户 然后编辑 `.env`，必改项：
 

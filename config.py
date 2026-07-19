@@ -49,10 +49,10 @@ if not Path(DB_PATH).is_absolute():
     DB_PATH = str(BASE_DIR / DB_PATH)
 
 # Session timeout (minutes, 0 = never)
-SESSION_TIMEOUT_MINUTES = int(_env("SESSION_TIMEOUT_MINUTES", "30"))
+SESSION_TIMEOUT_MINUTES = int(_env("SESSION_TIMEOUT_MINUTES", "0"))
 
 # Session idle timeout (minutes, 0 = never reap)
-SESSION_IDLE_TIMEOUT_MINUTES = int(_env("SESSION_IDLE_TIMEOUT_MINUTES", "5"))
+SESSION_IDLE_TIMEOUT_MINUTES = int(_env("SESSION_IDLE_TIMEOUT_MINUTES", "0"))
 
 # OCR
 OCR_ENABLED = _env("OCR_ENABLED", "true").lower() == "true"
