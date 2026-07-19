@@ -1,0 +1,78 @@
+/* ═══════════════ Chat — 消息 / Markdown / 思考 ═══════════════ */
+
+/* ── Message bubble ── */
+.msg{padding:10px 14px;border-radius:var(--radius);font-size:.93rem;line-height:1.55;word-wrap:break-word}
+.msg.user{max-width:75%;align-self:flex-end;background:var(--bubble-user);border-bottom-right-radius:3px;color:var(--text-bright)}
+.msg.assistant{max-width:92%;align-self:flex-start;background:var(--bubble-assistant);border:1px solid var(--bubble-border);border-bottom-left-radius:3px}
+@keyframes msgSlideIn{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
+.msg.msg-enter{animation:msgSlideIn .25s ease-out}
+
+/* ── Message content ── */
+.msg-content p{margin:4px 0}.msg-content p:first-child{margin-top:0}.msg-content p:last-child{margin-bottom:0}
+.msg-content ul,.msg-content ol{margin:4px 0;padding-left:20px}.msg-content li{margin:2px 0}
+.msg-content h2,.msg-content h3,.msg-content h4{margin:8px 0 4px;font-weight:600}
+.msg-content h2{font-size:1.05rem}.msg-content h3{font-size:.95rem}.msg-content h4{font-size:.88rem}
+.msg-content pre{background:#000;border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px 12px;margin:6px 0;overflow-x:auto;font-family:var(--font-mono);font-size:.78rem;line-height:1.45}
+.msg-content code{background:rgba(255,255,255,.08);padding:1px 5px;border-radius:3px;font-family:var(--font-mono);font-size:.82rem}
+.msg-content pre code{background:none;padding:0;font-size:.78rem}
+.msg-content strong{font-weight:600;color:var(--text-bright)}
+.msg-content table{border-collapse:collapse;width:100%;margin:6px 0;font-size:.78rem;display:block;overflow-x:auto;-webkit-overflow-scrolling:touch}
+.msg-content th,.msg-content td{border:1px solid var(--border);padding:5px 8px;text-align:left;white-space:nowrap}
+.msg-content th{background:var(--bg-surface-2);color:var(--text-bright);font-weight:600;position:sticky;top:0}
+.msg-content tr:nth-child(even) td{background:rgba(255,255,255,.02)}
+
+/* ── Status bar ── */
+.msg .status-bar{font-size:.85rem;color:var(--text-dim);font-style:italic;padding:4px 0}
+
+/* ── Footer ── */
+.msg .msg-footer{display:flex;justify-content:space-between;align-items:center;margin-top:6px;gap:8px}
+.msg .timestamp{font-size:.72rem;color:var(--text-dim)}
+.msg .token-info{font-size:.78rem;color:var(--accent);font-weight:500;white-space:nowrap}
+
+/* ── Thinking fold ── */
+.msg .thinking-fold{margin:4px 0;overflow:hidden;background:var(--bubble-assistant);-webkit-tap-highlight-color:rgba(0,0,0,0)}
+.msg .thinking-header{cursor:pointer;font-size:.78rem;color:var(--text-dim);display:flex;justify-content:space-between;align-items:center;user-select:none;font-family:var(--font-mono);padding:2px 0}
+.msg .thinking-header:hover{opacity:.85}
+.msg .thinking-header::after{content:'▶';font-size:.72rem;transition:transform .2s}
+.msg .thinking-fold.open .thinking-header::after{transform:rotate(90deg)}
+.msg .thinking-content{padding:4px 0 4px 12px;font-size:.82rem;color:var(--text-dim);display:none;white-space:pre-wrap;font-family:var(--font-mono);max-height:390px;overflow-y:auto;line-height:1.4}
+.msg .thinking-fold.open .thinking-content{display:block}
+.thinking-content::-webkit-scrollbar{width:6px}
+
+/* ── Agent result fold ── */
+.msg .agent-fold{margin:4px 0;overflow:hidden;background:var(--bubble-assistant);border-left:2px solid var(--accent);border-radius:0 var(--radius-sm) var(--radius-sm) 0;-webkit-tap-highlight-color:rgba(0,0,0,0)}
+.msg .agent-fold-header{cursor:pointer;font-size:.78rem;color:var(--accent);display:flex;justify-content:space-between;align-items:center;user-select:none;font-family:var(--font-mono);padding:3px 6px}
+.msg .agent-fold-header:hover{opacity:.85}
+.msg .agent-fold-header::after{content:'▶';font-size:.72rem;transition:transform .2s}
+.msg .agent-fold.open .agent-fold-header::after{transform:rotate(90deg)}
+.msg .agent-fold-content{padding:3px 6px 3px 10px;font-size:.8rem;color:var(--text-dim);display:none;white-space:pre-wrap;font-family:var(--font-mono);max-height:300px;overflow-y:auto;line-height:1.4}
+.msg .agent-fold.open .agent-fold-content{display:block}
+.agent-fold-content::-webkit-scrollbar{width:6px}
+.agent-fold-content::-webkit-scrollbar-track{background:transparent}
+.agent-fold-content::-webkit-scrollbar-thumb{background:rgba(150,150,150,.35);border-radius:3px}
+.agent-fold-content::-webkit-scrollbar-thumb:hover{background:rgba(150,150,150,.55)}
+.thinking-content::-webkit-scrollbar-track{background:transparent}
+.thinking-content::-webkit-scrollbar-thumb{background:rgba(150,150,150,.35);border-radius:3px}
+.thinking-content::-webkit-scrollbar-thumb:hover{background:rgba(150,150,150,.55)}
+@keyframes thinkBounce{0%,60%,100%{opacity:.2;transform:translateY(0)}30%{opacity:1;transform:translateY(-3px)}}
+.thinking-dots{display:inline-flex;gap:3px;padding:4px 0}
+.thinking-dots span{width:5px;height:5px;border-radius:50%;background:var(--text-dim);animation:thinkBounce 1.2s infinite}
+.thinking-dots span:nth-child(2){animation-delay:.2s}
+.thinking-dots span:nth-child(3){animation-delay:.4s}
+
+/* ── Download card ── */
+.download-card{display:flex;align-items:center;gap:10px;background:var(--bg-surface-2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px 14px;margin:6px 0;text-decoration:none;color:var(--text-primary);transition:border-color .2s}
+.download-card:hover{border-color:var(--accent)}
+.download-card .file-icon{font-size:1.3rem;flex-shrink:0}
+.download-card .file-name{flex:1;font-size:.85rem;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.download-card .file-action{font-size:.8rem;color:var(--accent);font-weight:600;flex-shrink:0}
+
+/* ── Chat images ── */
+.chat-image{display:block;max-width:240px;max-height:200px;border-radius:var(--radius-sm);cursor:pointer;margin:6px 0;object-fit:cover;border:1px solid var(--border);transition:transform .15s,box-shadow .15s}
+.chat-image:hover{transform:scale(1.02);box-shadow:0 4px 20px rgba(0,0,0,.5)}
+.chat-image:active{transform:scale(.98)}
+.user-upload-preview{display:block;max-width:200px;max-height:180px;margin-top:6px;border-radius:8px;object-fit:cover;cursor:pointer}
+
+/* ── File badges ── */
+.msg .file-badges{display:flex;gap:4px;flex-wrap:wrap;margin-bottom:6px}
+.msg .file-badge{font-size:.72rem;background:var(--bg-surface-2);padding:2px 8px;border-radius:10px;color:var(--text-dim);max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:inline-block}

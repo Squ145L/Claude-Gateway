@@ -18,6 +18,34 @@ from logger import logger
 from db.store import init_db
 
 
+async def cleanup_stale_streams():
+    """Background task — force-pop StreamingSessions stuck in draining/cancelled
+    for longer than the configured timeout.  This is the safety net for the
+    safety net: if the finally block in chat.py also fails, this cleans up."""
+    from services.streaming import StreamingStore, StreamStatus
+    from config import SESSION_IDLE_TIMEOUT_MINUTES
+    timeout = SESSION_IDLE_TIMEOUT_MINUTES * 60 if SESSION_IDLE_TIMEOUT_MINUTES > 0 else 300
+    logger.info("[StreamStore] Cleanup task started (timeout=%ss, interval=30s)", timeout)
+    while True:
+        await asyncio.sleep(30)
+        try:
+            now = __import__('time').time()
+            stale = []
+            for cid, s in list(StreamingStore._sessions.items()):
+                if s.status in (StreamStatus.DRAINING, StreamStatus.CANCELLED):
+                    if now - s.created_at > timeout:
+                        stale.append((cid, s.msg_id, s.status.value))
+            if stale:
+                logger.warning("[StreamStore] Cleanup found %s stale sessions (total=%s)",
+                               len(stale), len(StreamingStore._sessions))
+            for cid, mid, st in stale:
+                logger.warning("[StreamStore] Cleanup force-popping stale session %s msg=%s status=%s age=%ss",
+                               cid[:8], mid, st, round(now - StreamingStore._sessions[cid].created_at, 1) if cid in StreamingStore._sessions else '?')
+                StreamingStore._sessions.pop(cid, None)
+        except Exception as e:
+            logger.error("[StreamStore] Cleanup error: %s", e)
+
+
 async def cleanup_expired_files():
     """Background task — delete expired files every hour."""
     while True:
@@ -54,6 +82,7 @@ async def lifespan(app: FastAPI):
     logger.info(f"Listening on http://{HOST}:{PORT}")
     logger.info("=" * 50)
     asyncio.create_task(cleanup_expired_files())
+    asyncio.create_task(cleanup_stale_streams())
     # Start persistent claude session pool
     from services.claude_client import get_session_manager
     session_mgr = get_session_manager()
@@ -112,6 +141,13 @@ async def root():
     """Redirect to PWA."""
     from fastapi.responses import RedirectResponse
     return RedirectResponse(url="/static/index.html")
+
+
+@app.get("/sw.js")
+async def service_worker():
+    """Serve Service Worker from root so scope '/' is valid."""
+    from fastapi.responses import FileResponse
+    return FileResponse("static/sw.js", media_type="application/javascript")
 
 
 # Register API routers (imports after app creation to avoid circular imports)

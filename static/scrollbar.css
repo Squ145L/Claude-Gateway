@@ -1,0 +1,5 @@
+/* ═══════════════ Scrollbar ═══════════════ */
+.messages::-webkit-scrollbar{width:12px}
+.messages::-webkit-scrollbar-track{background:transparent;margin:4px 0}
+.messages::-webkit-scrollbar-thumb{background:rgba(150,150,150,.45);border-radius:6px;min-height:50px;border:2px solid transparent;background-clip:content-box}
+.messages::-webkit-scrollbar-thumb:hover{background:rgba(150,150,150,.65);border:2px solid transparent;background-clip:content-box}

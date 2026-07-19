@@ -14,6 +14,7 @@ import aiohttp
 from fastapi import APIRouter, Depends, HTTPException
 from api.auth import verify_token
 from config import DB_PATH, LOG_DIR, FILE_ROOT_DIR, BASE_DIR, PORT
+from config import DEEPSEEK_CC_SWITCH_DB, DEEPSEEK_PROVIDER_UUID
 from logger import logger
 
 router = APIRouter(tags=["system"], dependencies=[Depends(verify_token)])
@@ -22,15 +23,15 @@ _START_TIME = time.time()
 
 
 async def _get_deepseek_balance() -> dict:
-    """Query DeepSeek balance via API. Returns {'balance':..., 'currency':...} or {} on failure."""
+    """Query DeepSeek balance via API. BUGFIX #11: paths now from config, not hardcoded."""
     try:
-        # Read API key from CC Switch DB
-        cc_db = Path.home() / ".cc-switch" / "cc-switch.db"
+        cc_db = Path(DEEPSEEK_CC_SWITCH_DB)
         if not cc_db.exists():
             return {}
         conn = sqlite3.connect(str(cc_db))
         row = conn.execute(
-            "SELECT settings_config FROM providers WHERE id='47bb5ec7-8465-4098-a5a0-8c2df7f15643'"
+            "SELECT settings_config FROM providers WHERE id=?",
+            (DEEPSEEK_PROVIDER_UUID,)
         ).fetchone()
         conn.close()
         if not row:
@@ -101,6 +102,13 @@ async def system_info():
     except Exception:
         pool = {"total": 0, "alive": 0, "sessions": []}
 
+    # Streaming session stats
+    try:
+        from services.streaming import StreamingStore
+        streaming_stats = StreamingStore.stats()
+    except Exception:
+        streaming_stats = {"active": 0, "sessions": []}
+
     # DeepSeek balance (async, non-blocking)
     deepseek_balance = await _get_deepseek_balance()
 
@@ -113,6 +121,7 @@ async def system_info():
         "claude_cli": shutil.which("claude") or shutil.which("claude.cmd") or "not found",
         "deepseek_balance": deepseek_balance or None,
         "pool": pool,
+        "streaming": streaming_stats,
         "db": {
             "conversations": conv_count,
             "messages": msg_count,
@@ -182,17 +191,15 @@ async def clean_cache():
 @router.post("/system/stop-session")
 async def stop_session(body: dict):
     """Kill a specific claude session by conversation_id."""
-    from services.claude_client import _sessions
     conv_id = body.get("conversation_id", "")
     if not conv_id:
         raise HTTPException(status_code=400, detail={"error": "conversation_id required", "code": "BAD_REQUEST"})
-    if conv_id in _sessions:
-        try:
-            _sessions[conv_id]["process"].kill()
-        except Exception:
-            pass
-        del _sessions[conv_id]
-        logger.info(f"[System] Session {conv_id[:8]} stopped by user")
+    from services.claude_client import get_session_manager
+    mgr = get_session_manager()
+    sp = mgr._sessions.get(conv_id)
+    if sp:
+        await mgr.close_session(conv_id)
+        logger.info("[System] Session %s stopped by user", conv_id[:8])
         return {"stopped": True, "conversation_id": conv_id}
     return {"stopped": False, "message": "Session not found"}
 
@@ -249,27 +256,27 @@ async def update_config(body: dict):
         if max_fsize < 1 or max_fsize > 500:
             raise HTTPException(status_code=400, detail={"error": "max_file_size_mb must be 1-500", "code": "BAD_REQUEST"})
 
+    # BUGFIX #6: import config once at module level, update ALL 5 config vars consistently
+    import config as cfg
+
     for line in lines:
         if timeout is not None and line.startswith("SESSION_TIMEOUT_MINUTES="):
             new_lines.append(f"SESSION_TIMEOUT_MINUTES={timeout}")
+            cfg.SESSION_TIMEOUT_MINUTES = timeout
         elif mirror is not None and line.startswith("CONSOLE_MIRROR="):
             val = "true" if mirror else "false"
             new_lines.append(f"CONSOLE_MIRROR={val}")
-            import config
-            config.CONSOLE_MIRROR = mirror
+            cfg.CONSOLE_MIRROR = mirror
         elif idle_timeout is not None and line.startswith("SESSION_IDLE_TIMEOUT_MINUTES="):
             new_lines.append(f"SESSION_IDLE_TIMEOUT_MINUTES={idle_timeout}")
-            import config
-            config.SESSION_IDLE_TIMEOUT_MINUTES = idle_timeout
+            cfg.SESSION_IDLE_TIMEOUT_MINUTES = idle_timeout
         elif file_root is not None and line.startswith("FILE_ROOT_DIR="):
             new_lines.append(f"FILE_ROOT_DIR={file_root}")
-            import config
-            config.FILE_ROOT_DIR = file_root
+            cfg.FILE_ROOT_DIR = file_root
         elif max_fsize is not None and line.startswith("MAX_FILE_SIZE_MB="):
             new_lines.append(f"MAX_FILE_SIZE_MB={max_fsize}")
-            import config
-            config.MAX_FILE_SIZE_MB = max_fsize
-            config.MAX_FILE_SIZE_BYTES = max_fsize * 1024 * 1024
+            cfg.MAX_FILE_SIZE_MB = max_fsize
+            cfg.MAX_FILE_SIZE_BYTES = max_fsize * 1024 * 1024
         else:
             new_lines.append(line)
     env_path.write_text("\n".join(new_lines) + "\n", encoding="utf-8")
@@ -303,6 +310,57 @@ async def get_events(since: int = 0):
     return {"events": events[since:], "next_since": len(events)}
 
 
+@router.post("/system/migrate-images")
+async def migrate_images():
+    """Move all image files from FILE_ROOT_DIR into images/ subfolder.
+    Updates the files table stored_path for each moved file."""
+    from config import FILE_ROOT_DIR
+    import sqlite3
+    from config import DB_PATH
+
+    root = Path(FILE_ROOT_DIR)
+    img_dir = root / "images"
+    img_dir.mkdir(parents=True, exist_ok=True)
+
+    image_exts = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp"}
+    moved = 0
+
+    for f in root.iterdir():
+        if not f.is_file():
+            continue
+        if f.suffix.lower() not in image_exts:
+            continue
+        dest = img_dir / f.name
+        # Skip if dest exists (avoid collision — keep newer)
+        if dest.exists():
+            logger.warning(f"[Migrate] Skip {f.name} — already in images/")
+            continue
+        try:
+            shutil.move(str(f), str(dest))
+            moved += 1
+            logger.info(f"[Migrate] {f.name} → images/")
+        except Exception as e:
+            logger.error(f"[Migrate] Failed {f.name}: {e}")
+
+    # Update DB — change stored_path from root → images/ for moved files
+    if moved > 0:
+        try:
+            conn = sqlite3.connect(DB_PATH)
+            # Update all image paths that are in root (not already in a subdir)
+            for ext in image_exts:
+                conn.execute(
+                    "UPDATE files SET stored_path = REPLACE(stored_path, ?, ?) "
+                    "WHERE stored_path LIKE ? AND stored_path NOT LIKE ?",
+                    (str(root) + "\\", str(img_dir) + "\\",
+                     str(root) + "\\%" + ext, str(img_dir) + "\\%"),
+                )
+            conn.commit()
+            conn.close()
+        except Exception as e:
+            logger.error(f"[Migrate] DB update failed: {e}")
+
+    return {"moved": moved, "message": f"已整理 {moved} 张图片 → images/"}
+
 @router.post("/system/restart")
 async def restart_server():
     """Spawn restart.bat and exit."""
@@ -313,9 +371,9 @@ async def restart_server():
 
     logger.info("[System] Restart triggered — spawning restart.bat")
     subprocess.Popen(
-        [str(bat)],
+        str(bat),
         cwd=str(base),
-        creationflags=subprocess.CREATE_NEW_CONSOLE | subprocess.DETACHED_PROCESS,
+        creationflags=subprocess.DETACHED_PROCESS,
         shell=True,
     )
     return {"restarting": True, "message": "Server restarting in background. Refresh page in 3 seconds."}
@@ -331,9 +389,9 @@ async def soft_restart_server():
 
     logger.info("[System] Soft restart triggered — spawning soft-restart.bat")
     subprocess.Popen(
-        [str(bat)],
+        str(bat),
         cwd=str(base),
-        creationflags=subprocess.CREATE_NEW_CONSOLE | subprocess.DETACHED_PROCESS,
+        creationflags=subprocess.DETACHED_PROCESS,
         shell=True,
     )
     return {"restarting": True, "message": "Server restarting gracefully. Refresh page in 5 seconds."}

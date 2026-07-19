@@ -14,6 +14,9 @@ router = APIRouter(tags=["files"], dependencies=[Depends(verify_token)])
 # Separate router for download — uses query-token auth instead of Bearer header
 download_router = APIRouter(tags=["files"])
 
+# Image extensions — stored in images/ subfolder for preview
+IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp"}
+
 
 def _check_size(size: int):
     if size > MAX_FILE_SIZE_BYTES:
@@ -55,14 +58,22 @@ async def upload_file(file: UploadFile = File(...)):
     if not safe_name or safe_name in (".", ".."):
         safe_name = f"file_{file_id}{Path(file.filename).suffix}"
 
+    # Images → images/ subfolder, others → root
+    ext = Path(safe_name).suffix.lower()
+    if ext in IMAGE_EXTENSIONS:
+        sub_dir = Path(FILE_ROOT_DIR) / "images"
+        sub_dir.mkdir(parents=True, exist_ok=True)
+        base_dir = sub_dir
+    else:
+        base_dir = Path(FILE_ROOT_DIR)
+
     # Avoid collisions: append (1), (2), etc. if file exists
     stem = Path(safe_name).stem
-    ext = Path(safe_name).suffix
-    stored_path = str(Path(FILE_ROOT_DIR) / safe_name)
+    stored_path = str(base_dir / safe_name)
     counter = 1
     while Path(stored_path).exists():
         safe_name = f"{stem} ({counter}){ext}"
-        stored_path = str(Path(FILE_ROOT_DIR) / safe_name)
+        stored_path = str(base_dir / safe_name)
         counter += 1
 
     with open(stored_path, "wb") as f:
@@ -112,12 +123,14 @@ async def download_file(name: str, token: str = Query(...)):
     if token != AUTH_SECRET:
         raise HTTPException(status_code=401, detail={"error": "Invalid token", "code": "UNAUTHORIZED"})
 
-    # Security: resolve path and ensure it's inside FILE_ROOT_DIR
+    # Resolve target — try root first, then images/ subfolder
     root = Path(FILE_ROOT_DIR).resolve()
     target = (root / name).resolve()
-
-    # Must be under FILE_ROOT_DIR, and must be a direct child file (not subdirectory)
-    if target.parent != root:
+    if not target.exists():
+        target = (root / "images" / name).resolve()
+    try:
+        target.relative_to(root)
+    except ValueError:
         raise HTTPException(status_code=403, detail={
             "error": "Path traversal not allowed", "code": "FORBIDDEN",
         })
@@ -127,12 +140,13 @@ async def download_file(name: str, token: str = Query(...)):
             "error": "File not found", "code": "NOT_FOUND",
         })
 
-    logger.info(f"[Files] Download: {target.name} ({target.stat().st_size} bytes)")
+    dl_name = Path(name).name
+    logger.info(f"[Files] Download: {dl_name} ({target.stat().st_size} bytes)")
     return FileResponse(
         path=str(target),
-        filename=target.name,
+        filename=dl_name,
         media_type="application/octet-stream",
-        headers={"Content-Disposition": f'attachment; filename="{target.name}"'},
+        headers={"Content-Disposition": f'attachment; filename="{dl_name}"'},
     )
 
 
@@ -146,8 +160,11 @@ async def view_file(name: str, token: str = Query(...)):
 
     root = Path(FILE_ROOT_DIR).resolve()
     target = (root / name).resolve()
-
-    if target.parent != root:
+    if not target.exists():
+        target = (root / "images" / name).resolve()
+    try:
+        target.relative_to(root)
+    except ValueError:
         raise HTTPException(status_code=403, detail={
             "error": "Path traversal not allowed", "code": "FORBIDDEN",
         })

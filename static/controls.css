@@ -1,0 +1,29 @@
+/* ═══════════════ Controls — 复用交互控件 ═══════════════ */
+
+/* ── Buttons ── */
+.btn-primary{width:100%;padding:12px;border:none;border-radius:var(--radius-sm);background:var(--accent);color:#fff;font-size:.95rem;font-weight:600;cursor:pointer}
+.btn-primary:hover{background:var(--accent-hover)}.btn-primary:disabled{opacity:.5;cursor:not-allowed}
+.btn-primary.small{width:auto;padding:6px 14px;font-size:.78rem;font-weight:500;border-radius:16px}
+.icon-btn{background:var(--bg-surface);border:none;font-size:1.2rem;cursor:pointer;padding:5px 8px;color:var(--text-dim);-webkit-tap-highlight-color:rgba(0,0,0,0)}
+.icon-btn:hover{color:var(--text-primary)}.icon-btn.active{color:var(--accent)}
+.btn-small{padding:5px 10px;border-radius:16px;border:1px solid var(--border);background:var(--bg-surface-2);color:var(--text-primary);font-size:.75rem;cursor:pointer;font-family:var(--font);font-weight:500}
+.btn-small:hover{background:var(--bg-input)}.btn-small.primary{background:var(--accent);color:#fff;border:1px solid var(--border)}
+.btn-small.danger{background:rgba(220,50,50,.12);color:var(--danger);border:1px solid var(--border)}.btn-small.danger:hover{background:var(--danger);color:#fff;border-color:var(--danger)}
+
+/* ── Forms ── */
+.form-row{display:flex;flex-direction:column;gap:3px;margin-bottom:8px}
+.form-row label{font-size:.75rem;color:var(--text-dim)}
+.form-row input[type="text"],.form-row input[type="password"],.form-row select,.form-row input[type="number"]{padding:6px 8px;border-radius:var(--radius-sm);font-size:.82rem;border:1px solid var(--border);background:var(--bg-input);color:var(--text-primary);font-family:var(--font)}
+.form-row input:focus,.form-row select:focus{outline:none;border-color:var(--accent)}
+.form-row input[type="range"]{width:100%;accent-color:var(--accent)}
+.color-row{display:flex;align-items:center;gap:4px}.color-row span{font-size:.72rem;color:var(--text-dim)}.color-row input[type="color"]{width:28px;height:28px;border:none;border-radius:4px;padding:0;cursor:pointer;background:none}
+
+/* ── Presets ── */
+.preset-row{display:flex;gap:4px;margin-bottom:8px}
+.preset-btn{flex:1;padding:6px 0;border-radius:var(--radius-sm);border:1px solid var(--border);background:var(--bg-input);color:var(--text-primary);font-size:.78rem;cursor:pointer;font-family:var(--font)}
+.preset-btn:hover{border-color:var(--text-dim)}.preset-btn.active{border-color:var(--accent);background:var(--accent-dim);color:var(--accent)}
+
+/* ── System info / actions / log viewer ── */
+.sys-info{font-size:.75rem;color:var(--text-dim);line-height:1.5;margin-bottom:8px}
+.sys-actions{display:flex;gap:6px}.sys-actions-right{justify-content:center}.sys-actions-danger{margin-top:8px;padding-top:10px;border-top:1px solid var(--border)}
+.log-viewer{margin-top:10px;max-height:200px;overflow-y:auto;background:#000;padding:10px;border-radius:var(--radius-sm);font-family:var(--font-mono);font-size:.7rem;line-height:1.5;color:#888;border:1px solid var(--border);white-space:pre-wrap;word-break:break-all}.log-viewer.hidden{display:none}

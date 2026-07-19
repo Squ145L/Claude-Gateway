@@ -1,5 +1,73 @@
 # Claude Gateway — 开发日志
 
+## 2026-07-19 卡消息根因分析
+
+### 现象
+偶尔"卡一条消息"——发了消息没回复，连发第二条才能看到第一条的回复。
+
+### 根因
+`send_message()` 读到第一个 `type: "result"` 就 `break`。但 Claude CLI 在派发后台 agent 后，会先发一个 `result`（agent 还在跑），等 agent 完成后 CLI 继续往 stdout 写 `user(tool_result) → assistant → result`。这第二段输出因为 `send_message()` 已经退出而残留在管道缓冲区，被下一次 `send_message()` 当作"新数据"先读出来。
+
+CLI 的 stdin/stdout 是独立双工通道——用户发消息和模型回复互不阻塞。Gateway 当前把 stdin 写入和 stdout 读取绑在 `send_message()` 一个方法里，人为截断了管道。
+
+### 修复方向
+**Phase 1:** stdout reader 改为持久 Task + event queue；`send_message()` 从 queue 消费，读到 result + 后台工具全部完成才 break。
+**Phase 2:** Agent 结果折叠 + 用户 streaming 期间可打断注入新消息。
+
+> 详细计划见 GATEWAY.md
+
+### 新增中断处理
+- `services/claude_client.py` — `_handle_interrupt()` 异步协程：发 SIGINT → drain stale events → 写入新 prompt
+- 使用 `await`（非 `yield from`）在 async generator 中调用
+
+---
+
+## 2026-07-17 架构重构：StreamingStore + DrainTask
+
+### 背景
+旧架构有 7 个断网丢回复的 bug，根因是状态散落在闭包变量/模块/DB 之间，`CancelledError` 在 asyncio 里穿透所有 `except Exception`。
+
+### 新建文件
+
+| 文件 | 说明 |
+|------|------|
+| `services/streaming.py` | **StreamingSession 状态机** (276行)：THINKING→GENERATING→DRAINING→FINALIZED→CANCELLED。内存始终最新，API 读内存覆盖 DB |
+| `static/js/state.js` | 全局状态 + 事件总线 (60行) |
+| `static/js/api.js` | HTTP + SSE 封装 (80行) |
+| `static/js/streaming.js` | **StreamSession 客户端状态机** (180行)：IDLE→CONNECTING→THINKING→GENERATING→WAITING→COMPLETED |
+| `static/js/render.js` | 消息渲染/markdown/thinking fold (200行) |
+| `static/js/ui.js` | 侧边栏/设置/输入/toast/文件 (500行) |
+
+### 重构文件
+
+| 文件 | 改动 |
+|------|------|
+| `api/chat.py` | 闭包变量 → StreamingStore；handle_chunk 删除 → 内联内存写入；DB sync 解耦为后台 Task；drain 抽出为独立 `_drain_to_completion()` Task |
+| `api/conversations.py` | GET 响应加 `streaming` 字段，merge 内存覆盖 DB |
+| `api/system.py` | 重启 `subprocess.Popen` 传 string 非 list；去 `CREATE_NEW_CONSOLE\|DETACHED_PROCESS` 互斥 |
+| `main.py` | 新增 `cleanup_stale_streams()` 后台任务 |
+| `static/app.js` | 从 895 行单文件拆为 6 模块 |
+| `soft-restart.bat` | 优雅关闭 5s → /F 兜底 |
+
+### 删除文件
+- `static/app.js` (根目录) — 功能迁移至 `js/` 目录
+
+### Bug 修复清单
+
+| # | 现象 | 根因 | 修复 |
+|---|------|------|------|
+| 1 | 刷新丢 thinking | `flush_to_db` 节流 1s，刷新时 DB 还是空的 | StreamingStore 写内存即时，DB sync 后台跑 |
+| 2 | 切换后 thinking 永远在转 | `renderMessages` 不检测 in-progress → `.streaming` class 永不设置 → polling 死循环 | API `streaming` 字段驱动 + renderMessages 启动 polling |
+| 3 | 断网 toast "已恢复" 实际没恢复 | `.catch()` 里 `api.getMessages` 静默失败 | 退避重试 + polling 兜底 |
+| 4 | 切后台 DOM 被重建 | `visibilitychange` 不查 `_sseActive` → 误删直播 DOM | `isLive()` 保护 + `no-collapse` 逻辑 |
+| 5 | `CancelledError` 穿透 `except Exception` | asyncio 中 `CancelledError` 继承 `BaseException` ≠ `Exception` | 全链路 7 处改为 `except (CancelledError, Exception)` |
+| 6 | drain 0 chunks | drain 在已 Cancel 的 generator 内 → `await` 立即被杀 | 独立 `asyncio.create_task(_drain_to_completion())` |
+| 7 | reader_fn 的 sentinel 丢 | `finally: await put(None)` 被 Cancel → queue 永不关闭 | `except (CancelledError, Exception)` |
+| 8 | 空消息残留 DB 显示时间戳 | finalize(empty) → cancel 失败 → content="" 没被过滤 | finalize(empty) 直接 cancel + conversations 兜底过滤 |
+| 9 | 重启按钮 WinError 87 | `CREATE_NEW_CONSOLE\|DETACHED_PROCESS` 互斥 | 改为只 `DETACHED_PROCESS` |
+| 10 | PWA 按钮不工作 | sw-update/sw-unreg 无 JS 事件 | 完整 SW 注册/更新/注销逻辑 |
+
+
 ## 2026-07-12 会话总结
 
 > 从「能用的原型」推进到「可交付的产品」，修了 14 个 bug/功能，搭建了双端口开发环境。

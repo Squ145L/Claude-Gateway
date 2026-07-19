@@ -1,4 +1,4 @@
-"""Configuration loaded from .env file."""
+﻿"""Configuration loaded from .env file."""
 import os
 from pathlib import Path
 from dotenv import load_dotenv
@@ -56,6 +56,13 @@ SESSION_IDLE_TIMEOUT_MINUTES = int(_env("SESSION_IDLE_TIMEOUT_MINUTES", "5"))
 
 # OCR
 OCR_ENABLED = _env("OCR_ENABLED", "true").lower() == "true"
+
+# DeepSeek balance query (CC Switch integration)
+# BUGFIX #11: no longer hardcoded — configurable via .env
+DEEPSEEK_CC_SWITCH_DB = _env("DEEPSEEK_CC_SWITCH_DB",
+    str(Path.home() / ".cc-switch" / "cc-switch.db"))
+DEEPSEEK_PROVIDER_UUID = _env("DEEPSEEK_PROVIDER_UUID",
+    "your-provider-uuid-here")
 
 # Ensure data directories exist
 Path(DB_PATH).parent.mkdir(parents=True, exist_ok=True)

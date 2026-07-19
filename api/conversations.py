@@ -4,8 +4,10 @@ from api.auth import verify_token
 from db.store import (
     list_conversations, get_conversation, get_messages,
     delete_conversation, create_conversation, update_conversation_title,
-    pin_conversation,
+    pin_conversation, has_older_messages,
 )
+from services.streaming import StreamingStore
+from logger import logger
 
 router = APIRouter(tags=["conversations"], dependencies=[Depends(verify_token)])
 
@@ -26,13 +28,40 @@ async def list_convs(limit: int = 50):
 
 
 @router.get("/conversations/{conv_id}")
-async def get_conv(conv_id: str):
+async def get_conv(conv_id: str, limit: int = 200, before: int = None):
     conv = await get_conversation(conv_id)
     if not conv:
         raise HTTPException(status_code=404, detail={
             "error": "Conversation not found", "code": "NOT_FOUND",
         })
-    messages = await get_messages(conv_id)
+    messages = await get_messages(conv_id, limit=limit, before_id=before)
+    # Filter out cancelled streaming messages
+    messages = [m for m in messages if m.content != '__CANCELLED__']
+
+    # ── Merge streaming state: in-memory is fresher than DB ──
+    streaming_state = StreamingStore.get_api_state(conv_id)
+    if streaming_state:
+        logger.info("[Conv GET] %s: MERGING streaming state msg=%s status=%s thinking=%schars content=%schars",
+                    conv_id[:8], streaming_state["msg_id"], streaming_state["status"],
+                    len(streaming_state["thinking"]), len(streaming_state["content"]))
+        for m in reversed(messages):
+            if m.id == streaming_state["msg_id"]:
+                # Override stale DB values with latest in-memory state
+                if streaming_state["thinking"]:
+                    m.thinking = streaming_state["thinking"]
+                if streaming_state["content"]:
+                    m.content = streaming_state["content"]
+                break
+
+    has_more = False
+    if messages:
+        has_more = await has_older_messages(conv_id, messages[0].id)
+    # Diagnostic log
+    last_role = messages[-1].role if messages else 'none'
+    last_preview = (messages[-1].content[:60] + '...') if messages and messages[-1].content else '(empty)'
+    logger.info("[Conv GET] %s: %s msgs, last=%s, preview=%s, streaming=%s",
+                conv_id[:8], len(messages), last_role, last_preview,
+                streaming_state["status"] if streaming_state else "none")
     return {
         "conversation": {
             "id": conv.id, "title": conv.title,
@@ -50,6 +79,8 @@ async def get_conv(conv_id: str):
             }
             for m in messages
         ],
+        "has_more": has_more,
+        "streaming": streaming_state,  # null if no active stream
     }
 
 

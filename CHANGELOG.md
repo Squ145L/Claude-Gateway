@@ -1,5 +1,72 @@
 # Claude Gateway 修改日志
 
+## 2026-07-19 — 卡消息根因分析 + Phase 1/2 规划
+
+### 卡消息根因
+
+`send_message()` 读到第一个 `type: "result"` 就 `break`。但 Claude CLI 在派发后台 agent 后，会先发一个 `result`（agent 还在跑），等 agent 完成后 CLI 继续往 stdout 写 `user(tool_result) → assistant → result`。这第二段输出因为 `send_message()` 已经退出而残留在管道缓冲区，被下一次 `send_message()` 当作"新数据"先读出来，表现为主观感受"卡了一条消息，连发两条才恢复"。
+
+### Phase 1 规划：持久 Reader + Event Queue
+
+**目标：** 消除 stdout 残留。`send_message()` 不再直接读 stdout，改为从 event queue 消费。
+
+```
+CLI stdin  ←── _writer_lock ─── send_message()  (只写不读)
+CLI stdout ──→ _reader_task (永久运行)
+                   ├─ parse NDJSON
+                   ├─ track tool_use / tool_result
+                   ├─ detect bg tools
+                   └─ asyncio.Queue(maxsize=500)
+                            │
+send_message() ──→ 从 queue 读事件 ──→ yield
+   读到 result + 无 bg tools pending → break
+```
+
+**关键改动：**
+- `SessionProcess` 新增 `_reader_task`、`_event_queue`、`_send_lock`、`_bg_tools`
+- `send_message()` 退出条件改为：读到 `result` + `_bg_tools` 为空
+- stdin/stdout 解耦，不再人为截断管道
+
+### Phase 2 规划：Agent 结果折叠 + 消息打断
+
+- 后台 agent 输出 → 可折叠消息块（复用 thinking-fold 模式）
+- 用户 streaming 期间可打断并注入新消息（类似 CLI Ctrl-C）
+- 前端 StreamSession 新增 `INTERRUPTING` / `WAITING` 状态
+
+> 详细计划见 GATEWAY.md →「下一步」
+
+---
+
+## 2026-07-17 — StreamingStore 状态机 + 前端模块化
+
+### 后端
+- 🆕 `services/streaming.py` — StreamingSession 状态机 (THINKING/GENERATING/DRAINING/FINALIZED/CANCELLED)，StreamingStore 全局注册表
+- 🔨 `api/chat.py` — 闭包变量消除；DB sync 解耦为后台 Task；drain 抽出为独立 `_drain_to_completion()` Task
+- 🔨 `api/conversations.py` — GET 响应新增 `streaming` 字段；内存状态 merge 覆盖 DB
+- 🔨 `api/system.py` — 修复重启 subprocess 参数；余额查询已有接口，前端新增展示
+- 🔨 `main.py` — 新增 `cleanup_stale_streams()` 后台清理任务
+- 🗑️ 删除 `static/app.js` (根目录)
+
+### 前端
+- 🆕 `static/js/state.js` — 全局状态 + 事件总线
+- 🆕 `static/js/api.js` — HTTP + SSE 封装
+- 🆕 `static/js/streaming.js` — StreamSession 客户端状态机 (IDLE/CONNECTING/THINKING/GENERATING/WAITING/COMPLETED)
+- 🆕 `static/js/render.js` — 消息渲染/markdown/thinking fold
+- 🆕 `static/js/ui.js` — 侧边栏/设置/输入/toast/文件/SSE
+- 🔨 `static/js/app.js` — 精简为入口 + 事件绑定 + SW 注册
+- 🔨 `static/js/style.css` — settings-section 折叠三角；thinking-header 旋转三角
+- 🔨 `static/sw.js` — v56
+- 🔨 `soft-restart.bat` — 优雅关闭 5s → /F 兜底
+
+### 修复
+- CancelledError 穿透 except Exception (7 处)
+- drain 被 Cancel 秒杀 (独立 Task)
+- 刷新丢回复 (StreamingStore 内存 + API streaming 字段)
+- 前端 polling 不启动 (renderMessages 检测 streaming)
+- 重启按钮 WinError 87
+- PWA 更新/注销按钮无功能
+- 空消息残留 DB
+
 ## 2026-07-10（下午 — 架构重构）
 
 ### 架构重构：常驻进程池（核心变更）

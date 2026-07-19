@@ -1,0 +1,17 @@
+/* ═══════════════ Theme Variables ═══════════════ */
+:root {
+    --bg-primary: #0a0a0a; --bg-surface: #0f0f0f; --bg-surface-2: #161616; --bg-input: #1e1e1e;
+    --text-primary: #d4d4d4; --text-dim: #8b8b8b; --text-secondary: #9a9a9a; --text-bright: #ffffff;
+    --accent: #4a9eff; --accent-hover: #6bb5ff; --accent-dim: rgba(74,158,255,0.15);
+    --bubble-user: #1a2a3a; --bubble-assistant: #121212; --bubble-border: #2a2a2a;
+    --thinking-bg: #161616; --thinking-border: #2a2a2a;
+    --danger: #f44747; --border: #2a2a2a; --radius: 10px; --radius-sm: 6px;
+    --safe-bottom: env(safe-area-inset-bottom,0px);
+    --font: -apple-system,BlinkMacSystemFont,'Segoe UI','Microsoft YaHei',sans-serif;
+    --font-mono: 'Cascadia Code','Fira Code','Consolas',monospace;
+}
+
+/* ═══════════════ Reset ═══════════════ */
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;font-family:var(--font);background:var(--bg-primary);color:var(--text-primary);-webkit-font-smoothing:antialiased;overscroll-behavior:none;overflow-x:hidden}
+.screen{display:none;position:absolute;inset:0}.screen.active{display:flex;flex-direction:column}

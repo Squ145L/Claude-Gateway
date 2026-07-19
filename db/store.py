@@ -8,6 +8,7 @@ from typing import Optional
 
 from config import DB_PATH, FILE_TTL_HOURS
 from db.models import Conversation, Message, FileRecord
+from logger import logger
 
 DB: Optional[aiosqlite.Connection] = None
 
@@ -172,6 +173,66 @@ async def delete_conversation(conv_id: str):
 
 # ── Messages ──
 
+# ── Streaming message helpers: progressive save during generation ──
+# Flow: init_streaming_msg → update_streaming_msg (×N) → finalize_streaming_msg
+# This ensures DB always has the latest state, even if client disconnects mid-stream.
+
+async def init_streaming_msg(conv_id: str) -> int:
+    """Insert a placeholder assistant message (content='', thinking='').
+    Returns the message ID for subsequent updates."""
+    db = await get_db()
+    now = datetime.now().isoformat()
+    cursor = await db.execute(
+        """INSERT INTO messages (conversation_id, role, content, thinking, created_at)
+           VALUES (?, 'assistant', '', '', ?)""",
+        (conv_id, now),
+    )
+    await db.commit()
+    msg_id = cursor.lastrowid
+    logger.info(f"[DB] init_streaming_msg conv={conv_id[:8]} msg_id={msg_id}")
+    return msg_id
+
+
+async def update_streaming_msg(msg_id: int, thinking: str, content: str):
+    """Update the in-progress message with latest thinking and content."""
+    db = await get_db()
+    await db.execute(
+        "UPDATE messages SET thinking = ?, content = ? WHERE id = ?",
+        (thinking, content, msg_id),
+    )
+    await db.commit()
+
+
+async def finalize_streaming_msg(
+    msg_id: int,
+    thinking: str,
+    content: str,
+    thinking_dur: str,
+    thinking_wc: int,
+    token_usage: str,
+):
+    """Mark streaming message as complete with final content and metadata."""
+    db = await get_db()
+    await db.execute(
+        """UPDATE messages SET thinking = ?, content = ?, thinking_dur = ?,
+           thinking_wc = ?, token_usage = ? WHERE id = ?""",
+        (thinking, content, thinking_dur, thinking_wc, token_usage, msg_id),
+    )
+    await db.commit()
+    logger.info(f"[DB] finalize_streaming_msg msg_id={msg_id} content_len={len(content)}")
+
+
+async def cancel_streaming_msg(msg_id: int):
+    """Mark a streaming message as cancelled (empty content → will be filtered)."""
+    db = await get_db()
+    await db.execute(
+        "UPDATE messages SET content = '__CANCELLED__' WHERE id = ?",
+        (msg_id,),
+    )
+    await db.commit()
+    logger.info(f"[DB] cancel_streaming_msg msg_id={msg_id}")
+
+
 async def save_message(msg: Message):
     db = await get_db()
     now = datetime.now().isoformat() if not msg.created_at else msg.created_at
@@ -187,19 +248,46 @@ async def save_message(msg: Message):
     msg.id = cursor.lastrowid
 
 
-async def get_messages(conv_id: str, limit: int = 100) -> list[Message]:
+async def get_messages(conv_id: str, limit: int = 200, before_id: int = None) -> list[Message]:
+    """Fetch messages for a conversation.
+
+    If before_id is given, returns `limit` messages older than that id (DESC then ASC).
+    Otherwise returns the latest `limit` messages.
+    """
     db = await get_db()
-    cursor = await db.execute(
-        """SELECT id, conversation_id, role, content, thinking, thinking_dur,
-           thinking_wc, token_usage, file_ids, tokens_in, tokens_out, created_at
-           FROM (
-               SELECT * FROM messages WHERE conversation_id = ?
-               ORDER BY id DESC LIMIT ?
-           ) ORDER BY id ASC""",
-        (conv_id, limit),
-    )
+    if before_id is not None:
+        cursor = await db.execute(
+            """SELECT id, conversation_id, role, content, thinking, thinking_dur,
+               thinking_wc, token_usage, file_ids, tokens_in, tokens_out, created_at
+               FROM (
+                   SELECT * FROM messages WHERE conversation_id = ? AND id < ?
+                   ORDER BY id DESC LIMIT ?
+               ) ORDER BY id ASC""",
+            (conv_id, before_id, limit),
+        )
+    else:
+        cursor = await db.execute(
+            """SELECT id, conversation_id, role, content, thinking, thinking_dur,
+               thinking_wc, token_usage, file_ids, tokens_in, tokens_out, created_at
+               FROM (
+                   SELECT * FROM messages WHERE conversation_id = ?
+                   ORDER BY id DESC LIMIT ?
+               ) ORDER BY id ASC""",
+            (conv_id, limit),
+        )
     rows = await cursor.fetchall()
     return [Message(**dict(r)) for r in rows]
+
+
+async def has_older_messages(conv_id: str, earliest_id: int) -> bool:
+    """Check if there are messages older than the given id."""
+    db = await get_db()
+    cursor = await db.execute(
+        "SELECT COUNT(*) FROM messages WHERE conversation_id = ? AND id < ?",
+        (conv_id, earliest_id),
+    )
+    row = await cursor.fetchone()
+    return row[0] > 0
 
 
 # ── Files ──
