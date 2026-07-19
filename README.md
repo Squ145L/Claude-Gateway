@@ -1,6 +1,9 @@
 # Claude Gateway
 
 手机浏览器远程使用 Claude Code
+通过 frp 隧道远程操控 Claude Code，支持 DeepSeek。
+
+前提： 本机需已配置 [CC Switch] 并设置 DeepSeek 为当前模型。Gateway 本身不管理 API Key，由 CC Switch 负责模型路由。
 ```
 浏览器 ──→ frp 隧道 ──→ 家里 Windows 电脑 :8080 ──→ Claude Code 常驻进程池 → 秒回
 ```
