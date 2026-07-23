@@ -40,12 +40,25 @@ async def _save_sid_safe(conv_id: str, claude_sid: str):
 @router.post("/chat")
 async def chat(request: Request, body: dict):
     """POST /api/chat — SSE streaming via persistent Claude process pool."""
+    from config import MAX_MESSAGE_LENGTH, MAX_MESSAGE_LENGTH_ENABLED
+
     user_message = body.get("message", "").strip()
     if not user_message:
         return StreamingResponse(
             iter(["data: {\"type\":\"error\",\"content\":\"Empty message\"}\n\n"]),
             media_type="text/event-stream",
         )
+
+    # ── Length check ──────────────────────────────────────
+    if MAX_MESSAGE_LENGTH_ENABLED and len(user_message) > MAX_MESSAGE_LENGTH:
+        return StreamingResponse(
+            iter([json.dumps({
+                "type": "error",
+                "content": f"Message too long ({len(user_message)} chars, max {MAX_MESSAGE_LENGTH})"
+            }, ensure_ascii=False) + "\n\n"]),
+            media_type="text/event-stream",
+        )
+    # ───────────────────────────────────────────────────────
 
     # Command interception
     if user_message.startswith("/"):

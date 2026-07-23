@@ -21,11 +21,46 @@ router = APIRouter(tags=["system"], dependencies=[Depends(verify_token)])
 
 _START_TIME = time.time()
 
+# ── DeepSeek balance cache ────────────── (for /system/status polling)
+_balance_cache = None       # cached dict or None
+_balance_cache_at = 0.0     # timestamp of last fetch
+BALANCE_CACHE_TTL = 60      # seconds — avoid hitting DeepSeek API on every poll
+
+
+def _read_version_json():
+    """Read version.json. Returns "0.0.0" if missing."""
+    import json as _json
+    vp = BASE_DIR / "version.json"
+    try:
+        return _json.loads(vp.read_text(encoding="utf-8")).get("version", "0.0.0")
+    except Exception:
+        return "0.0.0"
+
 
 async def _get_deepseek_balance() -> dict:
     """Query DeepSeek balance via API. BUGFIX #11: paths now from config, not hardcoded."""
     try:
+        import os as _os
         cc_db = Path(DEEPSEEK_CC_SWITCH_DB)
+
+        # ── Path safety check ──────────────────────────────
+        # Only allow paths inside ~/.cc-switch/ (prevents reading arbitrary SQLite files)
+        allowed_parents = [
+            Path.home() / ".cc-switch",
+        ]
+        resolved = cc_db.resolve()
+        is_allowed = any(
+            resolved == p.resolve() or str(resolved).startswith(str(p.resolve()) + _os.sep)
+            for p in allowed_parents
+        ) or resolved == Path.home() / ".cc-switch" / "cc-switch.db"
+        if not is_allowed:
+            logger.warning(
+                "[System] DeepSeek balance query blocked — "
+                "DEEPSEEK_CC_SWITCH_DB outside ~/.cc-switch/: %s", resolved
+            )
+            return {}
+        # ────────────────────────────────────────────────────
+
         if not cc_db.exists():
             return {}
         conn = sqlite3.connect(str(cc_db))
@@ -61,6 +96,58 @@ async def _get_deepseek_balance() -> dict:
     except Exception:
         pass
     return {}
+
+
+async def _get_balance_cached(force: bool = False) -> dict:
+    """Cached balance query. force=True bypasses cache."""
+    global _balance_cache, _balance_cache_at
+    if not force and _balance_cache is not None and (time.time() - _balance_cache_at) < BALANCE_CACHE_TTL:
+        return _balance_cache
+    _balance_cache = await _get_deepseek_balance()
+    _balance_cache_at = time.time()
+    return _balance_cache
+
+
+async def _build_status() -> dict:
+    """Lightweight status snapshot — no DB I/O, no external API (balance cached)."""
+    uptime_val = time.time() - _START_TIME
+    hours = int(uptime_val // 3600)
+    mins = int((uptime_val % 3600) // 60)
+    secs = int(uptime_val % 60)
+
+    try:
+        from services.claude_client import get_session_manager
+        pool = get_session_manager().stats()
+    except Exception:
+        pool = {"total": 0, "alive": 0, "sessions": []}
+
+    try:
+        from services.streaming import StreamingStore
+        streaming_stats = StreamingStore.stats()
+    except Exception:
+        streaming_stats = {"active": 0, "sessions": []}
+
+    return {
+        "port": PORT,
+        "uptime": f"{hours}h {mins}m {secs}s",
+        "pool": pool,
+        "streaming": streaming_stats,
+        "deepseek_balance": await _get_balance_cached(force=False),
+    }
+
+
+@router.get("/system/status")
+async def system_status():
+    """Lightweight status — safe for 3s polling. Balance cached 60s."""
+    return await _build_status()
+
+
+@router.post("/system/refresh-balance")
+async def refresh_balance():
+    """Force-refresh DeepSeek balance cache."""
+    data = await _get_balance_cached(force=True)
+    logger.info("[System] Balance cache refreshed — balance=%s", data.get("balance", "?"))
+    return {"status": "ok", "deepseek_balance": data}
 
 
 @router.get("/system/info")
@@ -218,13 +305,19 @@ async def clear_logs():
 async def get_config():
     """Return current config values."""
     from config import SESSION_TIMEOUT_MINUTES, CONSOLE_MIRROR, FILE_ROOT_DIR, MAX_FILE_SIZE_MB
-    from config import SESSION_IDLE_TIMEOUT_MINUTES
+    from config import SESSION_IDLE_TIMEOUT_MINUTES, BYPASS_PERMISSIONS
+    from config import MAX_MESSAGE_LENGTH_ENABLED, MAX_MESSAGE_LENGTH, AUTO_CHECK_UPDATE
     return {
         "session_timeout_minutes": SESSION_TIMEOUT_MINUTES,
         "console_mirror": CONSOLE_MIRROR,
         "file_root_dir": FILE_ROOT_DIR,
         "max_file_size_mb": MAX_FILE_SIZE_MB,
         "session_idle_timeout_minutes": SESSION_IDLE_TIMEOUT_MINUTES,
+        "bypass_permissions": BYPASS_PERMISSIONS,
+        "message_length_limit_enabled": MAX_MESSAGE_LENGTH_ENABLED,
+        "message_length_limit": MAX_MESSAGE_LENGTH,
+        "auto_check_update": AUTO_CHECK_UPDATE,
+        "version": _read_version_json(),
     }
 
 
@@ -236,6 +329,10 @@ async def update_config(body: dict):
     mirror = body.get("console_mirror")
     file_root = body.get("file_root_dir")
     max_fsize = body.get("max_file_size_mb")
+    bypass_perms = body.get("bypass_permissions")  # bool or None
+    msg_limit_enabled = body.get("message_length_limit_enabled")  # bool or None
+    msg_limit_val = body.get("message_length_limit")             # int or None
+    auto_check = body.get("auto_check_update")                   # bool or None
 
     env_path = BASE_DIR / ".env"
     lines = env_path.read_text(encoding="utf-8").splitlines()
@@ -277,6 +374,31 @@ async def update_config(body: dict):
             new_lines.append(f"MAX_FILE_SIZE_MB={max_fsize}")
             cfg.MAX_FILE_SIZE_MB = max_fsize
             cfg.MAX_FILE_SIZE_BYTES = max_fsize * 1024 * 1024
+        elif bypass_perms is not None and line.startswith("BYPASS_PERMISSIONS="):
+            val = "true" if bypass_perms else "false"
+            new_lines.append(f"BYPASS_PERMISSIONS={val}")
+            cfg.BYPASS_PERMISSIONS = bypass_perms
+        # Backward compat — also update old key if present
+        elif bypass_perms is not None and line.startswith("CLAUDE_PERMISSION_MODE="):
+            val = "true" if bypass_perms else "false"
+            new_lines.append(f"BYPASS_PERMISSIONS={val}")
+            cfg.BYPASS_PERMISSIONS = bypass_perms
+        elif msg_limit_enabled is not None and line.startswith("MAX_MESSAGE_LENGTH_ENABLED="):
+            val = "true" if msg_limit_enabled else "false"
+            new_lines.append(f"MAX_MESSAGE_LENGTH_ENABLED={val}")
+            cfg.MAX_MESSAGE_LENGTH_ENABLED = msg_limit_enabled
+        elif msg_limit_val is not None and line.startswith("MAX_MESSAGE_LENGTH="):
+            v = int(msg_limit_val)
+            if v < 1000 or v > 500000:
+                raise HTTPException(status_code=400, detail={
+                    "error": "MAX_MESSAGE_LENGTH must be 1000-500000", "code": "BAD_REQUEST",
+                })
+            new_lines.append(f"MAX_MESSAGE_LENGTH={v}")
+            cfg.MAX_MESSAGE_LENGTH = v
+        elif auto_check is not None and line.startswith("AUTO_CHECK_UPDATE="):
+            val = "true" if auto_check else "false"
+            new_lines.append(f"AUTO_CHECK_UPDATE={val}")
+            cfg.AUTO_CHECK_UPDATE = auto_check
         else:
             new_lines.append(line)
     env_path.write_text("\n".join(new_lines) + "\n", encoding="utf-8")
@@ -297,6 +419,18 @@ async def update_config(body: dict):
     if max_fsize is not None:
         result["max_file_size_mb"] = max_fsize
         logger.info(f"[System] Max file size = {max_fsize}MB")
+    if bypass_perms is not None:
+        result["bypass_permissions"] = bypass_perms
+        logger.info("[System] Bypass permissions = %s", bypass_perms)
+    if msg_limit_enabled is not None:
+        result["message_length_limit_enabled"] = msg_limit_enabled
+        logger.info("[System] Message length limit enabled = %s", msg_limit_enabled)
+    if msg_limit_val is not None:
+        result["message_length_limit"] = msg_limit_val
+        logger.info("[System] Message length limit = %s", msg_limit_val)
+    if auto_check is not None:
+        result["auto_check_update"] = auto_check
+        logger.info("[System] Auto check update = %s", auto_check)
     return result
 
 
@@ -371,10 +505,9 @@ async def restart_server():
 
     logger.info("[System] Restart triggered — spawning restart.bat")
     subprocess.Popen(
-        str(bat),
+        ["cmd.exe", "/c", str(bat)],
         cwd=str(base),
-        creationflags=subprocess.DETACHED_PROCESS,
-        shell=True,
+        creationflags=subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP,
     )
     return {"restarting": True, "message": "Server restarting in background. Refresh page in 3 seconds."}
 
@@ -389,9 +522,8 @@ async def soft_restart_server():
 
     logger.info("[System] Soft restart triggered — spawning soft-restart.bat")
     subprocess.Popen(
-        str(bat),
+        ["cmd.exe", "/c", str(bat)],
         cwd=str(base),
-        creationflags=subprocess.DETACHED_PROCESS,
-        shell=True,
+        creationflags=subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP,
     )
     return {"restarting": True, "message": "Server restarting gracefully. Refresh page in 5 seconds."}

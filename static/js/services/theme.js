@@ -49,6 +49,9 @@ export const theme = {
         r.setProperty('--accent-hover', t.accent + 'cc');
         r.setProperty('--accent-dim', t.accent + '22');
         localStorage.setItem('cg_theme', name);
+        // Clear custom accent/bg so preset colors take full effect
+        localStorage.removeItem('cg_accent');
+        localStorage.removeItem('cg_bg');
 
         // 更新颜色选择器
         const inp = dom.setAccent;

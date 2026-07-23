@@ -97,16 +97,44 @@ app = FastAPI(
     title="Claude Gateway",
     version="1.0.0",
     lifespan=lifespan,
+    request_max_size=10 * 1024 * 1024,  # 10MB — reject oversized request bodies
 )
 
 # CORS — allow all origins (auth handles security)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
+    allow_credentials=False,   # Bearer token auth doesn't rely on cookies; compatible with allow_origins=["*"]
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# ═══════════════════════════════════════════════════════════
+# Security headers middleware
+# ═══════════════════════════════════════════════════════════
+
+@app.middleware("http")
+async def add_security_headers(request: Request, call_next):
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["X-XSS-Protection"] = "1; mode=block"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["Permissions-Policy"] = (
+        "camera=(), microphone=(), geolocation=()"
+    )
+    response.headers["Content-Security-Policy"] = (
+        "default-src 'self'; "
+        "script-src 'self' 'unsafe-inline'; "
+        "style-src 'self' 'unsafe-inline'; "
+        "img-src 'self' data: blob:; "
+        "connect-src 'self'; "
+        "font-src 'self'; "
+        "manifest-src 'self'; "
+        "worker-src 'self'"
+    )
+    return response
 
 
 # Rate limit middleware
@@ -159,6 +187,7 @@ from api.files import download_router                   # noqa: E402
 from api.health import router as health_router          # noqa: E402
 # from api.esp32 import router as esp32_router          # noqa: E402 — reserved for future ESP32/MCU
 from api.system import router as system_router          # noqa: E402
+from api.update import router as update_router          # noqa: E402
 
 app.include_router(auth_router, prefix="/api")
 app.include_router(chat_router, prefix="/api")
@@ -168,3 +197,4 @@ app.include_router(download_router, prefix="/api")
 app.include_router(health_router, prefix="/api")
 # app.include_router(esp32_router, prefix="/api")  # reserved for future ESP32/MCU
 app.include_router(system_router, prefix="/api")
+app.include_router(update_router, prefix="/api")

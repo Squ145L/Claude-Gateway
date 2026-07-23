@@ -167,3 +167,36 @@ if (state.secret) {
 }
 
 console.log('[app] Ready — %s modules loaded', 14);
+
+// ═══════════════════════════════════════════════════════════════
+// 7. Auto-update check (5s after startup, if enabled)
+// ═══════════════════════════════════════════════════════════════
+
+setTimeout(() => {
+    // Wait for config to load from settings panel
+    const doCheck = () => {
+        if (state.autoCheckUpdate) {
+            console.log('[app] Auto-update check — starting (silent)');
+            settingsPanel._checkUpdate(true);
+        } else {
+            console.log('[app] Auto-update check — disabled');
+        }
+    };
+    // Config loads when settings panel opens, or via _loadConfig in open().
+    // If autoCheckUpdate hasn't been set from server yet, default to true
+    // and let the server config override it next time settings panel opens.
+    // Wait a bit for config to potentially load from cached state.
+    if (state.autoCheckUpdate === undefined) {
+        // Config not loaded yet — wait and recheck
+        let attempts = 0;
+        const iv = setInterval(() => {
+            attempts++;
+            if (state.autoCheckUpdate !== undefined || attempts >= 20) {
+                clearInterval(iv);
+                doCheck();
+            }
+        }, 500);
+    } else {
+        doCheck();
+    }
+}, 5000);

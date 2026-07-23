@@ -16,18 +16,20 @@
 import { escHtml } from '../utils/html.js';
 
 /**
- * @param {string} text  — raw markdown-ish text
- * @param {object} api   — { fileDownloadUrl, fileViewUrl } 或其 mock
+ * @param {string} text     — raw markdown-ish text
+ * @param {object} api      — { fileDownloadUrl, fileViewUrl } 或其 mock
+ * @param {object} [tokenMap] — { filename: signed_token }  预换好的短期 token (可选)
  * @returns {string} HTML
  */
-export function renderMarkdown(text, api) {
+export function renderMarkdown(text, api, tokenMap) {
     if (!text) return '';
 
     let h = escHtml(text);
+    const _token = (name) => (tokenMap && tokenMap[name]) || null;
 
     // [DOWNLOAD:filename] → download card
     h = h.replace(/\[DOWNLOAD:([^\]]+)\]/g, (_, name) => {
-        const url = api.fileDownloadUrl(name);
+        const url = api.fileDownloadUrl(name, _token(name));
         return '<a class="download-card" href="' + url + '" download="' + escHtml(name) + '">'
             + '<span class="file-icon">&#128196;</span>'
             + '<span class="file-name">' + escHtml(name) + '</span>'
@@ -39,15 +41,15 @@ export function renderMarkdown(text, api) {
     h = h.replace(/\[FILE:([^\]]+)\]/g, (_, name) => {
         const isImg = /\.(png|jpe?g|gif|webp|bmp)$/i.test(name);
         if (isImg) {
-            const vurl = api.fileViewUrl(name);
-            const durl = api.fileDownloadUrl(name);
+            const vurl = api.fileViewUrl(name, _token(name));
+            const durl = api.fileDownloadUrl(name, _token(name));
             return '<img class="chat-image" src="' + vurl + '" alt="' + escHtml(name) + '"'
                 + ' loading="lazy"'
                 + ' data-download-url="' + durl + '"'
                 + ' onclick="window._gwViewImage(this.src)"'
                 + ' onerror="window._gwImgError(this)">';
         }
-        const durl = api.fileDownloadUrl(name);
+        const durl = api.fileDownloadUrl(name, _token(name));
         return '<a class="download-card" href="' + durl + '" download="' + escHtml(name) + '">'
             + '<span class="file-icon">&#128196;</span>'
             + '<span class="file-name">' + escHtml(name) + '</span>'

@@ -137,10 +137,19 @@ const SELECTORS = {
     setFileDir:      '#set-file-dir',
     setMaxFsize:     '#set-max-fsize',
 
+    // Settings — toggles
+    setBypassPerms:  '#set-bypass-perms',
+    setMsgLimitOn:   '#set-msg-limit-on',
+    setMsgLimitVal:  '#set-msg-limit-val',
+    msgLimitValueRow:'#msg-limit-value-row',
+    setAutoUpdate:   '#set-auto-update',
+
     // Settings — system
     sysInfo:         '#sys-info',
-    sysInfoLine:     '#sys-info-line',
-    sysPort:         '#sys-port',
+    sysLiveText:      '#sys-live-text',
+    sysBalanceRow:    '#sys-balance-row',
+    sysBalanceText:   '#sys-balance-text',
+    sysRefreshBalance:'#sys-refresh-balance',
     setTimeoutEl:    '#set-timeout',
     setMirrorEl:     '#set-mirror',
     setIdleEl:       '#set-idle-timeout',
@@ -151,6 +160,15 @@ const SELECTORS = {
     sysClearConvs:   '#sys-clear-convs',
     sysRestart:      '#sys-restart',
     sysLogViewer:    '#sys-log-viewer',
+
+    // Settings — update
+    versionCurrent:  '#version-current',
+    updateBadge:     '#update-badge',
+    updateInfo:      '#update-info',
+    updateChangelog: '#update-changelog',
+    btnUpdateCheck:  '#btn-update-check',
+    btnUpdateApply:  '#btn-update-apply',
+    linkGithub:      '#link-github',
 
     // Settings — system actions
     sysMigrateImages:'#sys-migrate-images',

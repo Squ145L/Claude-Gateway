@@ -44,6 +44,7 @@ function _flush() {
         const el = document.createElement('div');
         el.className = 'notify-item ' + (type || '');
         el.textContent = msg;
+        el.style.animation = 'none';  // suppress on insert — we trigger via RAF
 
         // insertBefore → 每次插入都变成第一个子元素 → 新通知在顶部
         if (stack.firstChild) {
@@ -51,6 +52,11 @@ function _flush() {
         } else {
             stack.appendChild(el);
         }
+
+        // Re-trigger CSS animation on next frame so browser sees the element first
+        requestAnimationFrame(() => {
+            el.style.animation = '';
+        });
 
         _items.unshift({ el, remaining: TTL_MS });
     }

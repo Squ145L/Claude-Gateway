@@ -20,12 +20,23 @@ python --version          # 需要 3.9+
 claude --version          # Claude Code CLI 需已安装
 
 # 安装 Python 依赖
-pip install fastapi uvicorn aiosqlite python-dotenv aiohttp
+pip install -r requirements.txt
 ```
 
 验证：`python -c "import fastapi, uvicorn, aiosqlite, aiohttp; print('ok')"` → 输出 `ok`
 
-### 2. 配置
+
+### 2. 下载最新 Release
+
+```bash
+curl -Lso gateway.zip https://github.com/Squ145L/Claude-Gateway/archive/refs/tags/v0.1.0.zip
+# 解压到目标目录（先问用户放哪）
+# Windows (PowerShell):
+Expand-Archive gateway.zip -DestinationPath "用户指定的路径"
+# 解压后有一层目录 Claude-Gateway-0.1.0/，把里面内容移出来或直接 cd 进去
+```
+
+### 3. 配置
 
 ```bash
 copy env.example .env      # Windows
@@ -47,9 +58,9 @@ copy env.example .env      # Windows
 | `MAX_FILE_SIZE_MB` | `20` | 上传文件大小上限 |
 | `FILE_TTL_HOURS` | `24` | 上传文件保存时长 |
 
-验证：`python -c "from config import *; print(f'Port={PORT}, SecretSet={len(AUTH_SECRET)>5}')"` → 输出 `Port=8080, SecretSet=True`
+之后验证：`python -c "from config import *; print(f'Port={PORT}, SecretSet={len(AUTH_SECRET)>5}')"` → 输出 `Port=8080, SecretSet=True`
 
-### 3. 配置内网穿透（frp）
+### 4. 配置内网穿透（frp）
 
 内网穿透需要用户在 frp 服务商网页操作，Agent 无法直接完成。引导用户：
 
@@ -65,7 +76,7 @@ copy env.example .env      # Windows
 3. 开启隧道后，让用户把隧道地址发给你
 4. 浏览器打开隧道地址，看到登录页即成功
 
-### 4. 完成上一步骤可启动
+### 5. 完成上一步骤可启动
 
 ```bash
 run.bat                     # Windows（自带崩溃重启守护）
@@ -131,10 +142,12 @@ claude-gateway/
 │   ├── files.py                # 上传/下载/内联查看
 │   ├── health.py               # 健康检查
 │   ├── system.py               # 系统管理/重启/日志/余额
+│   ├── update.py               # 自动更新 API
 │   └── ratelimit.py            # 频率限制
 ├── services/
 │   ├── claude_client.py        # Claude 进程池
-│   └── streaming.py            # StreamingSession 状态机
+│   ├── streaming.py            # StreamingSession 状态机
+│   └── update.py               # 自动更新核心逻辑
 ├── db/
 │   ├── models.py
 │   └── store.py                # SQLite (WAL 模式)
@@ -151,8 +164,13 @@ claude-gateway/
 │       └── components/         # chat / sidebar / compose / settings / welcome / confirm
 ├── docs/
 │   ├── PROJECT.md              # 编码规范
-│   └── UI-STANDARDS.md         # UI 规范
+│   ├── UI-STANDARDS.md         # UI 规范
+│   ├── CHANGELOG.md            # 修改日志
+│   └── BUGFIX_LOG.md           # Bug 分析日志
+├── version.json                # 版本号
+├── UPDATE.md                   # 当前版本更新说明
 ├── run.bat                     # 启动（进程守护）
+├── update.bat                  # 手动更新
 ├── restart.bat                 # 硬重启
 ├── soft-restart.bat            # 优雅重启
 └── clean.bat                   # 清理端口 + 缓存
@@ -182,6 +200,12 @@ claude-gateway/
 | GET | `/api/system/logs` | 查看日志 |
 | POST | `/api/system/clear-logs` | 清除日志 |
 | GET | `/api/system/events` | 系统事件（进程回收通知等） |
+| GET | `/api/system/status` | 实时状态（轮询用，余额缓存 60s） |
+| POST | `/api/system/refresh-balance` | 强制刷新余额 |
+| POST | `/api/system/soft-restart` | 平滑重启 |
+| POST | `/api/system/stop-session` | 终止指定对话进程 |
+| GET | `/api/system/update-check` | 检查更新 |
+| POST | `/api/system/update-apply` | 安装更新并重启 |
 
 ---
 

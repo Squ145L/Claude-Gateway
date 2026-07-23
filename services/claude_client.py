@@ -144,6 +144,7 @@ class SessionProcess:
         self._send_lock = asyncio.Lock()   # serialises send_message() calls
         self._alive = False
         self._killed = False
+        self.permission_mode: Optional[str] = None  # tracked for lazy restart on toggle change
         # ── Persistent reader ──────────────────
         self._reader_task: Optional[asyncio.Task] = None
         self._event_queue: asyncio.Queue = asyncio.Queue(maxsize=EVENT_QUEUE_MAXSIZE)
@@ -157,13 +158,15 @@ class SessionProcess:
     async def start(self, claude_session_id: Optional[str] = None):
         """Spawn claude. Resumes existing session if claude_session_id is set."""
         env = _build_env()
+        mode = "bypassPermissions" if config.BYPASS_PERMISSIONS else "default"
+        self.permission_mode = mode
         args = [
             CLAUDE_BIN,
             "--input-format", "stream-json",
             "--output-format", "stream-json",
             "--verbose",
             "--effort", CLAUDE_EFFORT,
-            "--permission-mode", "bypassPermissions",
+            "--permission-mode", mode,
         ]
         if claude_session_id:
             args.extend(["--resume", claude_session_id])
@@ -273,7 +276,13 @@ class SessionProcess:
                     # Console mirror
                     if config.CONSOLE_MIRROR:
                         try:
-                            print(f"\033[90m{ANSI_RE.sub('', line_str)[:200]}\033[0m", flush=True)
+                            clean = ANSI_RE.sub('', line_str)
+                            # Redact potential secrets in stdout (belt-and-suspenders)
+                            lower_prefix = clean[:80].lower()
+                            if any(kw in lower_prefix for kw in
+                                   ('authorization', 'bearer ', 'token=', 'secret=', 'api_key', 'auth_token')):
+                                clean = clean[:60] + '...<redacted>'
+                            print(f"\033[90m{clean[:200]}\033[0m", flush=True)
                         except Exception:
                             pass
 
@@ -627,11 +636,19 @@ class SessionManager:
                 except Exception:
                     pass
 
-        # Reuse or create
+        # Reuse or create — check mode match first
+        desired_mode = "bypassPermissions" if config.BYPASS_PERMISSIONS else "default"
+
         if conv_id in self._sessions:
             sp = self._sessions[conv_id]
-            logger.debug(f"[Pool] Reusing session {conv_id[:8]} (sid={str(sp.session_id)[:12]})")
-            return sp
+            if sp.alive and getattr(sp, 'permission_mode', None) == desired_mode:
+                logger.debug("[Pool] Reusing session %s (sid=%s mode=%s)",
+                           conv_id[:8], str(sp.session_id)[:12], sp.permission_mode)
+                return sp
+            # Mode mismatch or dead → restart with new mode
+            logger.info("[Pool] Restarting session %s (mode: %s → %s)",
+                       conv_id[:8], getattr(sp, 'permission_mode', '?'), desired_mode)
+            await self.close_session(conv_id)
 
         sp = SessionProcess(conv_id)
         await sp.start(claude_session_id)
@@ -639,9 +656,15 @@ class SessionManager:
         self._sessions[conv_id] = sp
         logger.info(
             f"[Pool] Created session {conv_id[:8]} "
-            f"(total: {len(self._sessions)}, resume={'yes' if claude_session_id else 'no'})"
+            f"(total: {len(self._sessions)}, resume={'yes' if claude_session_id else 'no'}, "
+            f"mode={sp.permission_mode})"
         )
         return sp
+
+    def get_session(self, conv_id: str) -> Optional[SessionProcess]:
+        """Return a live session by conversation ID, or None."""
+        sp = self._sessions.get(conv_id)
+        return sp if (sp and sp.alive) else None
 
     async def close_session(self, conv_id: str):
         """Explicitly close and remove a session."""
@@ -736,6 +759,18 @@ async def stream_chat(
             "- `/help` `/status` `/model` `/effort` `/compact` `/clear` `/stop` — handled by the Gateway server"
         )
         prompt = gateway_ctx + "\n\n" + prompt
+
+    # ── Permission guidance ────────────────────────────────
+    # Injected on every message so toggle changes take effect immediately.
+    if not config.BYPASS_PERMISSIONS:
+        permission_note = (
+            "[System] Tools are DISABLED. "
+            "Do NOT use Read/Write/Edit/Bash/Glob/Grep or any tool. "
+            "If the user asks for file ops or shell commands, reply: "
+            "\"请在 设置 -> 绕过权限 -> ON 开启后重试。\" "
+            "Just tell the user — do not attempt any tool call."
+        )
+        prompt = permission_note + "\n\n" + prompt
 
     mgr = get_session_manager()
 

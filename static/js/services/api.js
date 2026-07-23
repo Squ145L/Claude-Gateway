@@ -102,28 +102,57 @@ export const api = {
         }).then(r => r.json());
     },
 
+    // ── 文件 Token 换取 ──────────────────────────────────
+
+    /**
+     * 为文件换取短期下载 token (5分钟有效)。
+     * 需要登录态 (自动带 Bearer)。
+     * @param {string} fileId
+     * @returns {Promise<{token: string, filename: string, expires_in: number}>}
+     */
+    getFileToken(fileId) {
+        return api.post('/api/files/token', { file_id: fileId });
+    },
+
+    // ── Update ───────────────────────────────────────────
+
+    /** GET /api/system/update-check */
+    checkUpdate() {
+        return api.get('/api/system/update-check');
+    },
+
+    /** POST /api/system/update-apply */
+    applyUpdate() {
+        return api.post('/api/system/update-apply');
+    },
+
     // ── 文件 URL 构造 (集中管理，消除渲染层重复拼 URL) ────
 
     /**
      * 文件下载 URL。
+     * 支持可选的 HMAC token (优先) — 无 token 时 fallback 到 AUTH_SECRET。
      * @param {string} filename
+     * @param {string} [token]  — 从 getFileToken() 获取的短期 token
      * @returns {string}
      */
-    fileDownloadUrl(filename) {
+    fileDownloadUrl(filename, token) {
+        const t = token || state.secret;
         return state.serverUrl + '/api/files/download/'
             + encodeURIComponent(filename)
-            + '?token=' + encodeURIComponent(state.secret);
+            + '?token=' + encodeURIComponent(t);
     },
 
     /**
      * 文件预览 URL (图片 inline)。
      * @param {string} filename
+     * @param {string} [token]  — 从 getFileToken() 获取的短期 token
      * @returns {string}
      */
-    fileViewUrl(filename) {
+    fileViewUrl(filename, token) {
+        const t = token || state.secret;
         return state.serverUrl + '/api/files/view/'
             + encodeURIComponent(filename)
-            + '?token=' + encodeURIComponent(state.secret);
+            + '?token=' + encodeURIComponent(t);
     },
 };
 

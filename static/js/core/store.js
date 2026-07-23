@@ -49,6 +49,9 @@ _set('confirmCallback', null);
 _set('ctxTarget',       null);
 _set('isMobile', /Mobi|Android/i.test(navigator.userAgent) || ('ontouchstart' in window && window.innerWidth < 768));
 _set('isTouch',  ('ontouchstart' in window || navigator.maxTouchPoints > 0));
+_set('updateInfo', { current: '', latest: null, hasUpdate: false, body: '', checking: false, applying: false });
+_set('autoCheckUpdate', true);  // loaded from config later via _loadConfig()
+_set('versionJson', null);      // set from settings-panel after config loads
 
 // 首次使用没有 URL 时，默认当前 origin
 if (!localStorage.getItem('cg_server_url')) {
