@@ -19,6 +19,21 @@ import { notify } from '../utils/notify.js';
 import { confirm } from './confirm.js';
 import { settingsScreen } from './settings-screen.js';
 
+// ── Helper ────────────────────────────────────────────────
+/** Recompute section-body maxHeight after dynamic content changes */
+function _reflowSection(el) {
+    if (!el) return;
+    const section = el.closest('.settings-section');
+    if (!section || section.classList.contains('collapsed')) return;
+    const body = section.querySelector('.section-body');
+    if (!body) return;
+    body.style.maxHeight = 'none';
+    // Force reflow then set to actual height
+    requestAnimationFrame(() => {
+        body.style.maxHeight = body.scrollHeight + 'px';
+    });
+}
+
 export const settingsPanel = {
     // ── 生命周期 ──────────────────────────────────────────
 
@@ -212,6 +227,9 @@ export const settingsPanel = {
                     dom.updateChangelog.innerHTML =
                         '<strong>' + (newInfo.body || '无更新说明').split('\n').slice(0, 15).join('<br>');
                 }
+                // Reflow section height so the new content is visible
+                _reflowSection(dom.updateInfo);
+
                 if (!silent) {
                     notify.push('发现新版本 v' + newInfo.latest);
                     confirm.show(
